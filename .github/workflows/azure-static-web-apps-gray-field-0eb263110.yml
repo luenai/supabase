@@ -13,34 +13,31 @@ jobs:
   build_and_deploy_job:
     if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'closed')
     runs-on: ubuntu-latest
-    container:  # ✅ Use Node.js 20 with pnpm pre-installed
-      image: node:20
     name: Build and Deploy Job
     steps:
       - uses: actions/checkout@v3
-        with:
-          submodules: true
-          lfs: false
 
-      - name: Enable Corepack (Ensures pnpm is available)
-        run: corepack enable
+      - name: Log in to Azure Container Registry (ACR)
+        run: |
+          echo "${{ secrets.ACR_PASSWORD }}" | docker login ${{ secrets.ACR_LOGIN_SERVER }} -u ${{ secrets.ACR_USERNAME }} --password-stdin
 
-      - name: Install Dependencies
-        run: pnpm install --frozen-lockfile
+      - name: Build and Tag Docker Image
+        run: |
+          docker build . -f apps/studio/Dockerfile --target production -t ${{ secrets.ACR_LOGIN_SERVER }}/studio:latest
 
-      - name: Build the Project
-        run: pnpm build
+      - name: Push Docker Image to ACR
+        run: |
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/studio:latest
 
       - name: Deploy to Azure Static Web Apps
-        id: builddeploy
+        id: deploy
         uses: Azure/static-web-apps-deploy@v1
         with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_GRAY_FIELD_0EB263110 }}
-          repo_token: ${{ secrets.GITHUB_TOKEN }} # Used for Github integrations (i.e. PR comments)
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
           action: "upload"
-          app_location: "apps/studio" # App source code path
-          api_location: "" # API source code path - optional
-          output_location: ".next" # Built app content directory - optional
+          app_location: ""  # Not needed since we're deploying a container
+          output_location: "" # Not needed since it's a Docker deployment
+          skip_app_build: true  # Skip default build step
 
   close_pull_request_job:
     if: github.event_name == 'pull_request' && github.event.action == 'closed'
@@ -51,5 +48,5 @@ jobs:
         id: closepullrequest
         uses: Azure/static-web-apps-deploy@v1
         with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_GRAY_FIELD_0EB263110 }}
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
           action: "close"
